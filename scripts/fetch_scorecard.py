@@ -73,6 +73,7 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
     for row in archive_rows(paths["institution"], {
         "UNITID", "OPEID6", "INSTNM", "CITY", "STABBR", "CONTROL", "CURROPER",
         "NPT4_PUB", "NPT4_PRIV", "TUITIONFEE_IN", "TUITIONFEE_OUT", "EARN_THR_STATE",
+        "MD_EARN_WNE_4YR", "COUNT_WNE_4YR", "PREDDEG",
     }):
         if row["UNITID"] in all_institutions:
             raise ValueError(f"Duplicate institutional UNITID: {row['UNITID']}")
@@ -151,6 +152,11 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
             "opeid6": row["OPEID6"],
             "mainCampus": row.get("MAIN") == "1",
             "operating": row.get("CURROPER") == "1",
+            "predominantCredential": number(row["PREDDEG"]),
+            "overallEarnings": number(row["MD_EARN_WNE_4YR"]),
+            "overallEarningsStatus": status(row["MD_EARN_WNE_4YR"]),
+            "overallEarningsCount": number(row["COUNT_WNE_4YR"]),
+            "overallEarningsCountStatus": status(row["COUNT_WNE_4YR"]),
             "netPrice": number(row[net_price_field]),
             "netPriceField": net_price_field,
             "netPriceAcademicYear": "2024-25",
@@ -172,6 +178,10 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
     counts = {
         "institutions": len(institutions),
         "operatingInstitutions": sum(i["operating"] for i in institutions),
+        "institutionsWithOverallEarnings": sum(i["overallEarnings"] is not None for i in institutions),
+        "operatingInstitutionsWithOverallEarnings": sum(i["operating"] and i["overallEarnings"] is not None for i in institutions),
+        "institutionsOverallEarningsSuppressed": sum(i["overallEarningsStatus"] == "suppressed" for i in institutions),
+        "institutionsOverallEarningsUnavailable": sum(i["overallEarningsStatus"] == "unavailable" for i in institutions),
         "sourceCampusProgramRows": len(campus_programs),
         "uniquePrograms": len(programs),
         "programsWithEarnings": sum(p["earnings"] is not None for p in programs),
@@ -193,6 +203,9 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
     assert counts["programsWithEarnings"] + counts["programsSuppressed"] + counts["programsUnavailable"] == len(programs)
     assert all(p["institutionId"] in ar and 1 <= p["credential"] <= 8 for p in programs)
     assert all((p["earnings"] is not None) == (p["earningsStatus"] == "reported") for p in programs)
+    assert all((i["overallEarnings"] is not None) == (i["overallEarningsStatus"] == "reported") for i in institutions)
+    assert all((i["overallEarningsCount"] is not None) == (i["overallEarningsCountStatus"] == "reported") for i in institutions)
+    assert counts["institutionsWithOverallEarnings"] + counts["institutionsOverallEarningsSuppressed"] + counts["institutionsOverallEarningsUnavailable"] == len(institutions)
 
     return {
         "metadata": {
@@ -206,6 +219,7 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
                 "fieldOfStudy": SOURCES["fos"],
                 "glossary": "https://collegescorecard.ed.gov/data/glossary/",
                 "dictionary": "https://collegescorecard.ed.gov/files/CollegeScorecardDataDictionary.xlsx",
+                "institutionDocumentation": "https://collegescorecard.ed.gov/files/InstitutionDataDocumentation.pdf",
                 "fieldOfStudyDocumentation": "https://collegescorecard.ed.gov/files/FieldOfStudyDataDocumentation.pdf",
                 "graduateEarningsErrata": "https://collegescorecard.ed.gov/files/GraduateStudentsEarningsErrata.pdf",
             },
@@ -214,6 +228,11 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
             "earningsDescription": "Median annual earnings four years after completion for federally aided completers working and not enrolled; 2017–18 and 2018–19 completion cohorts, earnings observed in calendar years 2022 and 2023, inflation adjusted to 2024 dollars.",
             "earningsCompletionCohorts": ["2017-18", "2018-19"],
             "earningsObservationYears": [2022, 2023],
+            "overallEarningsDescription": "Official institution-wide median annual earnings of federally aided undergraduate completers working and not enrolled four years after completion. All fields and undergraduate credentials are pooled; this is not an average of program medians. Completion cohorts 2017–18 and 2018–19, observed in 2022 and 2023, in 2024 dollars.",
+            "overallEarningsCompletionCohorts": ["2017-18", "2018-19"],
+            "overallEarningsObservationYears": [2022, 2023],
+            "overallEarningsAggregation": "Official OPEID6-level outcome repeated across associated institution rows; opeidInstitutionIds and opeidStates describe the group. Counts must not be added across branches. Overall outcomes are not credential-specific and exclude graduate credentials and noncompleters.",
+            "predominantCredentialDescription": "PREDDEG is the institution's predominant undergraduate award in 2024–25, not the credential of each person in the overall earnings cohort: 0 unclassified, 1 certificate, 2 associate, 3 bachelor, 4 exclusively graduate. Any study duration derived from this classification is a scenario assumption, not an observed completion time.",
             "highSchoolDescription": "Median annual earnings of high-school/GED graduates aged 25–34 with earnings and not enrolled, in the institution's state; wages, salary and self-employment; 2019–2023 ACS pooled, adjusted to 2024 dollars.",
             "costYears": {"netPrice": "2024-25", "tuitionInState": "2025-26", "tuitionOutState": "2025-26"},
             "costDescription": "Institution-wide undergraduate reference prices in the source academic year's dollars, not program-specific or graduate costs. Net price includes living expenses and subtracts grants; at non-academic-year schools it concerns the largest program and may be a full-program amount when shorter than one year.",
@@ -223,6 +242,8 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
                 "earningsCount": "EARN_COUNT_WNE_4YR", "highSchoolEarnings": "EARN_THR_STATE",
                 "highSchoolEarningsNational": "EARN_THR_NAT", "netPrice": "NPT4_PUB / NPT4_PRIV",
                 "tuitionInState": "TUITIONFEE_IN", "tuitionOutState": "TUITIONFEE_OUT",
+                "overallEarnings": "MD_EARN_WNE_4YR", "overallEarningsCount": "COUNT_WNE_4YR",
+                "predominantCredential": "PREDDEG",
             },
             "missingValuePolicy": "PS/PrivacySuppressed => null + suppressed; NA/NULL/blank => null + unavailable. No substitute earnings timepoint or imputation.",
             "aggregation": "One observation per OPEID6 × four-digit CIP × credential. Identical branch rows are deduplicated, with relatedInstitutionIds retained. OPEID6 earnings may cover multiple branches, including branches outside Arkansas. These are not additive people counts.",
@@ -236,6 +257,7 @@ def build(raw_dir: Path, retrieved_at: str) -> dict:
             ],
             "documentationNotes": [
                 "The October 2026 dictionary's Most_Recent_Inst_Cohort_Map and current glossary identify the high-school threshold as 2023 ACS 5-year pooled; its historical Institution_Cohort_Map instead labels that field 2024 ACS. This build follows the most-recent map and glossary and preserves observed values unchanged.",
+                "Overall uses the Scorecard institution file's four-year completer measure, not the separate ten-year entrant measure MD_EARN_WNE_P10, which includes noncompleters. Scorecard values remain in 2024 dollars per its dictionary; the FAFSA lower-earnings indicator separately adjusts these earnings to January 2026 dollars, and those adjusted values are not used here.",
             ],
             "counts": counts,
         },

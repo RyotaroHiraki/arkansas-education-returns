@@ -16,13 +16,13 @@ Open http://localhost:4173. No API key, package installation, or build step is n
 node --test tests/*.test.mjs
 ```
 
-The arithmetic tests include known IRRs, negative IRR with positive earnings differences, undefined investment cases, dated cash flows, growth timing, and invalid inputs.
+The data-model tests cover institution-wide selection, missing values, cohort separation, and study-duration defaults. The arithmetic tests include known IRRs, negative IRR with positive earnings differences, undefined investment cases, dated cash flows, growth timing, and invalid inputs.
 
 ## Data
 
 The October 15, 2026 College Scorecard release is pinned. See [scripts/DATA.md](scripts/DATA.md) for the official download URLs, field definitions, hashes, suppression rules, and reproduction command. All raw source archives stay outside the repository.
 
-The UI includes currently operating Arkansas institutions with program records. Outcome observations are deduplicated by OPEID6, CIP, and credential, while retaining branch links. Outcomes can represent graduates working outside Arkansas and, for some institutions, branches in multiple states.
+The UI includes all currently operating Arkansas institutions and opens in **Overall — all fields of study** mode. Overall uses the official institution-wide undergraduate completer median `MD_EARN_WNE_4YR`, not an average of program medians. Select a field or credential to switch to a program-specific outcome. Overall covers all undergraduate credentials; it is not a graduate-degree or credential-specific estimate. Missing overall earnings remain unavailable, even when some program outcomes are reported. Program outcome observations are deduplicated by OPEID6, CIP, and credential, while retaining branch links. Outcomes can represent graduates working outside Arkansas and, for some institutions, branches in multiple states.
 
 ## Model
 
@@ -36,7 +36,7 @@ For `s` years of study, costs occur at times 0 through `s−1`. The `n` post-com
 
 Earnings are in 2024 dollars. All scenario inputs and rates are interpreted in real 2024 dollars. For undergraduate programs, the initial cost assumption copies institution-level 2025–26 in-state tuition numerically without price adjustment, explicitly labeled in the UI. Users should replace it with their own incremental cost estimate in 2024 dollars. Net price is a reference only and is never silently substituted for incremental costs. Graduate costs require user entry; graduate comparisons default only to a reported same-school, same-CIP bachelor's outcome, otherwise require a selection or custom earnings.
 
-Completion, employment, tax, financing, and social externality risks are not modeled. Four-year post-completion income serves as a constant initial earnings proxy, rather than a measured first-year or lifetime earnings profile.
+Completion, employment, tax, financing, and social externality risks are not modeled. In Overall mode, the default study duration follows the predominant undergraduate credential (1, 2, or 4 years), with a four-year fallback when that category is unavailable; users can change it. Four-year post-completion income serves as a constant initial earnings proxy, rather than a measured first-year or lifetime earnings profile.
 
 ## Files
 

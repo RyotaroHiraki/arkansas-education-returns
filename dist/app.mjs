@@ -1,5 +1,5 @@
 import {calculateReturns} from './returns.mjs';
-import {credentialNames,standardYears,belongsToInstitution,preferredBaseline,initialProgram} from './data-model.mjs';
+import {credentialNames,belongsToInstitution,preferredBaseline,overallPath,initialPath,defaultStudyYears} from './data-model.mjs?v=20261102-overall';
 
 const $ = id => document.getElementById(id);
 const fmt = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
@@ -13,6 +13,8 @@ const label = program=>program.field.replace(/\.$/,'');
 const schoolFor = program=>state.data.institutions.find(s=>s.id===program.institutionId);
 const programsFor = id=>state.data.programs.filter(p=>belongsToInstitution(p,id));
 const readNumber = id=>$(id).value.trim()===''?null:Number($(id).value);
+const isOverall = path=>path?.kind==='overall';
+const credentialLabel = path=>isOverall(path)?'All undergraduate credentials':credentialNames[path.credential];
 
 function options(element, items, selected) {
   element.replaceChildren(...items.map(({value,text,disabled=false})=>{const o=new Option(text,String(value));o.disabled=disabled;return o;}));
@@ -25,8 +27,8 @@ function selectSchool(id, programId) {
   const programs = programsFor(id);
   const credentials=[...new Set(programs.map(p=>p.credential))].sort((a,b)=>a-b);
   const chosen=programs.find(p=>p.id===programId);
-  const defaultCredential=chosen?.credential || (credentials.includes(3)?3:credentials.find(c=>programs.some(p=>p.credential===c && p.earnings!==null)) || credentials[0]);
-  options($('credential'),credentials.map(c=>({value:c,text:credentialNames[c]||`Credential ${c}`})),defaultCredential);
+  const defaultCredential=chosen?.credential || 0;
+  options($('credential'),[{value:0,text:'Overall (undergraduate)'},...credentials.map(c=>({value:c,text:credentialNames[c]||`Credential ${c}`}))],defaultCredential);
   $('credential').disabled=!credentials.length;
   state.showAll=false;
   selectCredential(defaultCredential, programId);
@@ -34,17 +36,21 @@ function selectSchool(id, programId) {
 
 function selectCredential(credential, programId) {
   $('credential').value=String(credential);
-  const choices=programsFor(state.school.id).filter(p=>p.credential===Number(credential)).sort(sortField);
-  options($('program'),choices.map(p=>({value:p.id,text:`${label(p)}${p.earnings===null?' — earnings not reported':''}`})),programId || choices.find(p=>p.earnings!==null)?.id);
-  $('program').disabled=!choices.length;
+  const overall=overallPath(state.school);
+  const choices=programsFor(state.school.id).filter(p=>Number(credential)===0?p.credential<=3:p.credential===Number(credential)).sort(sortField);
+  options($('program'),[{value:overall.id,text:'Overall — all fields of study'},...choices.map(p=>({value:p.id,text:`${label(p)}${Number(credential)===0?` · ${credentialNames[p.credential]}`:''}${p.earnings===null?' — earnings not reported':''}`}))],programId || (Number(credential)===0?overall.id:choices.find(p=>p.earnings!==null)?.id || choices[0]?.id || overall.id));
+  $('program').disabled=false;
   state.showAll=false;
   selectProgram($('program').value);
 }
 
 function selectProgram(id) {
-  state.program=state.data.programs.find(p=>p.id===id) || null;
+  const overall=overallPath(state.school);
+  const selected=id===overall.id?overall:programsFor(state.school.id).find(p=>p.id===id);
+  if(!selected){clearResult('This selection is unavailable. Choose an institution or field of study.');return;}
+  if(Number($('credential').value)!==selected.credential){selectCredential(selected.credential,id);return;}
+  state.program=selected;
   $('program').value=id;
-  if(!state.program){clearResult('No program-level data are available for this institution.');return;}
   populateBaselines();
   resetAssumptions();
   renderPrograms();
@@ -67,7 +73,7 @@ function populateBaselines() {
 function resetAssumptions() {
   const p=state.program;
   if(!p)return;
-  $('study-years').value=standardYears[p.credential]||2;
+  $('study-years').value=defaultStudyYears(p,state.school);
   $('work-years').value=40;
   $('annual-cost').value=p.credential<=3 && state.school.tuitionInState!==null?state.school.tuitionInState:'';
   $('annual-cost-range').value=$('annual-cost').value||0;
@@ -84,7 +90,7 @@ function getBaseline() {
   if(mode==='hs')return {value:state.school.highSchoolEarnings,label:'Arkansas high school graduates',note:'State residents ages 25–34 with earnings, not enrolled. Median annual earnings in 2024 dollars.',kind:'Scorecard EARN_THR_STATE'};
   if(mode==='bachelor'){
     const b=state.data.programs.find(p=>p.id===$('baseline-program').value);
-    return b?{value:b.earnings,label:`${schoolFor(b)?.name} / ${label(b)}`,note:`Bachelor’s median earnings four years after completion. This is not the same person’s earnings before further study.${b.cip!==state.program.cip?' The comparison program is in a different field.':''}`,kind:`Scorecard EARN_MDN_4YR; ${b.id}`}:{value:null,label:'Choose a bachelor’s program',note:'Choose a comparison when no bachelor’s earnings are reported for the same institution and field.',kind:'unselected'};
+    return b?{value:b.earnings,label:`${schoolFor(b)?.name} / ${label(b)}`,note:`Bachelor’s median earnings four years after completion. This is not the same person’s earnings before further study.${!isOverall(state.program)&&b.cip!==state.program.cip?' The comparison program is in a different field.':''}`,kind:`Scorecard EARN_MDN_4YR; ${b.id}`}:{value:null,label:'Choose a bachelor’s program',note:'Choose a comparison when no bachelor’s earnings are reported for the same institution and field.',kind:'unselected'};
   }
   return {value:readNumber('baseline-custom'),label:'Custom comparison earnings',note:'Enter annual earnings in 2024 dollars. This is a scenario assumption, not an observed value.',kind:'user assumption'};
 }
@@ -108,7 +114,7 @@ function render() {
   $('baseline-value').textContent=money(b.value);
   $('baseline-note').textContent=b.note;
   $('selected-title').textContent=label(p);
-  $('selected-subtitle').textContent=`${s.name} · ${s.city} · ${credentialNames[p.credential]}`;
+  $('selected-subtitle').textContent=`${s.name} · ${s.city} · ${credentialLabel(p)}`;
   $('graduate-value').textContent=p.earnings===null?'Not reported':money(p.earnings);
   $('comparison-value').textContent=money(b.value);
   $('comparison-label').textContent=$('baseline-mode').value==='bachelor'?'Selected bachelor’s graduates':b.label;
@@ -116,13 +122,16 @@ function render() {
   $('premium-value').textContent=money(gap);
   $('premium-label').textContent=$('baseline-mode').value==='custom'?'Gap vs. assumed comparison earnings':'Observed annual earnings gap';
   $('premium-value').classList.toggle('negative',gap!==null&&gap<0);
-  $('program-note').textContent=`CIP ${p.cip} · ${p.earnings===null?'Returns cannot be calculated because earnings are not reported.':`Earnings sample: ${p.earningsCount===null?'not reported':p.earningsCount.toLocaleString()}. These data do not indicate current program availability.`}`;
-  $('earnings-caption').textContent=`Earnings in 2024 dollars · Completion cohorts: 2017–18 and 2018–19 · Earnings observed: 2022 and 2023.${p.earningsGroupInstitutionIds.length>1?' Outcomes combine multiple campuses.':''}`;
+  const sample=p.earningsCount===null?'not reported':p.earningsCount.toLocaleString();
+  $('program-note').textContent=isOverall(p)?`Institution-wide undergraduate completers, across all fields and undergraduate credentials. Earnings sample: ${sample}. Select a field or credential for program-level outcomes.`:`CIP ${p.cip} · ${p.earnings===null?'Returns cannot be calculated because earnings are not reported.':`Earnings sample: ${sample}. These data do not indicate current program availability.`}`;
+  $('study-note').hidden=!isOverall(p);
+  $('study-note').textContent=isOverall(p)?`The ${defaultStudyYears(p,s)}-year default is an editable assumption${[1,2,3].includes(s.predominantCredential)?' based on the institution’s predominant credential':''}, not an observed average across completers.`:'';
+  $('earnings-caption').textContent=`${isOverall(p)?'Institution-wide undergraduate median':'Program median'} · 2024 dollars · Completion cohorts: 2017–18 and 2018–19 · Earnings observed: 2022 and 2023.${p.earningsGroupInstitutionIds.length>1?' Outcomes may combine multiple campuses.':''}`;
   $('cost-note').textContent=p.credential<=3?
     `Reference: undergraduate in-state tuition ${money(s.tuitionInState)} (2025–26). The default assumes this same amount as an incremental cost in 2024 dollars, without inflation adjustment. Adjust for grants, materials, and additional living costs.${s.netPrice!==null?` Net price of ${money(s.netPrice)} (2024–25, including living costs) is for reference only.`:''}`:
     'Enter your incremental out-of-pocket graduate study cost in 2024 dollars. Undergraduate tuition and net price are not substitutes. Enter 0 if grants or other support cover all incremental costs.';
 
-  if(p.earnings===null){clearResult('Earnings four years after completion are not reported for this program. Choose a program with reported earnings to calculate returns.');return;}
+  if(p.earnings===null){clearResult(isOverall(p)?'Overall undergraduate earnings are not reported for this institution. Choose another institution or a field with reported earnings.':'Earnings four years after completion are not reported for this program. Choose a program with reported earnings to calculate returns.');return;}
   if(b.value===null){clearResult('Choose a bachelor’s comparison program or enter custom comparison earnings.');return;}
   if(readNumber('annual-cost')===null){clearResult('Enter your annual incremental cost to calculate returns.');return;}
   if(readNumber('study-earnings')===null){clearResult('Enter annual earnings during study. Enter 0 if you expect no earnings.');return;}
@@ -164,7 +173,7 @@ function clearResult(message) {
   $('scenario-message').textContent=message;$('scenario-message').hidden=false;
   $('cashflow-chart').innerHTML='<div class="chart-empty"><span aria-hidden="true">↗</span><p>Complete the inputs to see cash flows over time.</p></div>';
   $('cashflow-chart').setAttribute('aria-label',message);
-  $('sensitivity-chart').innerHTML='<p class="field-note">Select a program with reported earnings and enter costs.</p>';
+  $('sensitivity-chart').innerHTML='<p class="field-note">Select an institution or program with reported earnings and enter costs.</p>';
   $('payback-note').textContent='—';$('download').disabled=true;
 }
 
@@ -196,10 +205,11 @@ function renderSensitivity(result) {
 }
 
 function renderPrograms() {
-  const list=programsFor(state.school.id).filter(p=>p.credential===state.program.credential).sort((a,b)=>(b.earnings??-Infinity)-(a.earnings??-Infinity)||sortField(a,b));
+  const list=programsFor(state.school.id).filter(p=>isOverall(state.program)?p.credential<=3:p.credential===state.program.credential).sort((a,b)=>(b.earnings??-Infinity)-(a.earnings??-Infinity)||sortField(a,b));
   const shown=state.showAll?list:list.slice(0,6);
+  $('programs-title').textContent=isOverall(state.program)?'Undergraduate programs at this institution':'Programs at this institution';
   $('programs-count').textContent=`${list.length} programs · ${list.filter(p=>p.earnings!==null).length} with reported earnings`;
-  $('programs-table').innerHTML=shown.map(p=>`<tr${p.id===state.program.id?' class="selected"':''}><td>${escape(label(p))}<small>CIP ${escape(p.cip)}</small></td><td>${escape(credentialNames[p.credential])}</td><td>${p.earnings===null?'<span class="muted">Not reported</span>':money(p.earnings)}</td><td><button type="button" class="table-select" data-program="${escape(p.id)}" aria-label="Select ${escape(label(p))}">${p.id===state.program.id?'Selected':'Explore'} <span aria-hidden="true">↗</span></button></td></tr>`).join('');
+  $('programs-table').innerHTML=shown.length?shown.map(p=>`<tr${p.id===state.program.id?' class="selected"':''}><td>${escape(label(p))}<small>CIP ${escape(p.cip)}</small></td><td>${escape(credentialNames[p.credential])}</td><td>${p.earnings===null?'<span class="muted">Not reported</span>':money(p.earnings)}</td><td><button type="button" class="table-select" data-program="${escape(p.id)}" aria-label="Select ${escape(label(p))}, ${escape(credentialNames[p.credential])}">${p.id===state.program.id?'Selected':'Explore'} <span aria-hidden="true">↗</span></button></td></tr>`).join(''):'<tr><td colspan="4">No field-of-study records are available for this institution.</td></tr>';
   $('show-programs').hidden=list.length<=6;
   $('show-programs').textContent=state.showAll?'Show 6 programs':`View all ${list.length} programs`;
 }
@@ -207,10 +217,10 @@ function renderPrograms() {
 function downloadScenario() {
   if(!state.result)return;
   const r=state.result,b=getBaseline(),p=state.program;
-  const rows=[['Arkansas Education Returns - scenario export'],['Release',state.data.metadata.release],['Source',state.data.metadata.sourceUrls.data],['Institution',state.school.name],['UNITID',state.school.id],['Program',label(p)],['CIP',p.cip],['Credential',p.credentialLabel],['Earnings unit','Median annual earnings; 2024 USD'],['Program earnings',p.earnings],['Program earnings N',p.earningsCount],['Completion cohorts',state.data.metadata.earningsCompletionCohorts.join('; ')],['Observation years',state.data.metadata.earningsObservationYears.join('; ')],['Comparison',b.label],['Comparison source',b.kind],['Annual cost assumption','2024 USD; tuition reference has not been inflation-adjusted'],['Tuition reference AY2025-26',state.school.tuitionInState],...Object.entries(r.inputs),['Shortcut rate (decimal)',r.shortcut],['Cash-flow IRR (decimal)',r.irr],['IRR status',r.irrReason||'defined'],['NPV',r.npv],['Payback years',r.paybackYears],['Timing',r.timing],['Interpretation','Descriptive median-based scenario, not a causal estimate; conditional on completion and earnings.'],[],['year','phase','study_cost','earnings_difference','net','discounted_net','cumulative_net','cumulative_discounted_net'],...r.cashflows.map(f=>[f.year,f.phase,f.cost,f.benefit,f.net,f.discountedNet,f.cumulativeNet,f.cumulativeDiscountedNet])];
+  const rows=[['Arkansas Education Returns - scenario export'],['Release',state.data.metadata.release],['Source',state.data.metadata.sourceUrls.data],['Institution',state.school.name],['UNITID',state.school.id],['OPEID6',state.school.opeid6],['Earnings group UNITIDs',p.earningsGroupInstitutionIds.join('; ')],['Earnings group states',p.earningsGroupStates.join('; ')],['Aggregation',isOverall(p)?state.data.metadata.overallEarningsAggregation:state.data.metadata.aggregation],['Selection',label(p)],['Outcome scope',isOverall(p)?'Institution-wide undergraduate completers, all fields and undergraduate credentials':'Field of study and credential'],['Earnings source field',isOverall(p)?'MD_EARN_WNE_4YR':'EARN_MDN_4YR'],['CIP',p.cip],['Credential',credentialLabel(p)],['Earnings unit','Median annual earnings; 2024 USD'],['Selected outcome earnings',p.earnings],['Selected outcome earnings N',p.earningsCount],['Completion cohorts',(isOverall(p)?state.data.metadata.overallEarningsCompletionCohorts:state.data.metadata.earningsCompletionCohorts).join('; ')],['Observation years',(isOverall(p)?state.data.metadata.overallEarningsObservationYears:state.data.metadata.earningsObservationYears).join('; ')],['Comparison',b.label],['Comparison source',b.kind],['Annual cost assumption','2024 USD; tuition reference has not been inflation-adjusted'],['Tuition reference AY2025-26',state.school.tuitionInState],...Object.entries(r.inputs),['Shortcut rate (decimal)',r.shortcut],['Cash-flow IRR (decimal)',r.irr],['IRR status',r.irrReason||'defined'],['NPV',r.npv],['Payback years',r.paybackYears],['Timing',r.timing],['Interpretation','Descriptive median-based scenario, not a causal estimate; conditional on completion and earnings.'],[],['year','phase','study_cost','earnings_difference','net','discounted_net','cumulative_net','cumulative_discounted_net'],...r.cashflows.map(f=>[f.year,f.phase,f.cost,f.benefit,f.net,f.discountedNet,f.cumulativeNet,f.cumulativeDiscountedNet])];
   const cell=value=>{let s=value===null||value===undefined?'':String(value);if(typeof value==='string'&&/^[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
   const blob=new Blob(['\ufeff'+rows.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`arkansas-returns-${p.id}.csv`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`arkansas-returns-${p.id.replaceAll(':','-')}.csv`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 
 function bindEvents() {
@@ -232,18 +242,18 @@ function bindEvents() {
 
 async function init() {
   try{
-    const response=await fetch('./data/scorecard-ar.json');
+    const response=await fetch('./data/scorecard-ar.json?v=20261102-overall');
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     state.data=await response.json();
-    if(!state.data.institutions?.length||!state.data.programs?.length)throw new Error('The dataset is empty');
-    const schools=state.data.institutions.filter(s=>s.operating && programsFor(s.id).length).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!state.data.institutions?.length||!Array.isArray(state.data.programs))throw new Error('The dataset is empty');
+    const schools=state.data.institutions.filter(s=>s.operating).sort((a,b)=>a.name.localeCompare(b.name));
     options($('school'),schools.map(s=>({value:s.id,text:`${s.name} · ${s.city}`})));
     $('school').disabled=false;
-    const initial=initialProgram(schools,state.data.programs);
-    if(!initial)throw new Error('No programs have reported earnings');
+    const initial=initialPath(schools);
+    if(!initial)throw new Error('No operating institutions are available');
     bindEvents();selectSchool(initial.institutionId,initial.id);
     const count=state.data.metadata.counts;
-    $('data-summary').textContent=`${schools.length} institutions · ${count.operatingProgramsWithEarnings} reported program outcomes · Release ${state.data.metadata.release}`;
+    $('data-summary').textContent=`${schools.length} institutions · ${schools.filter(s=>s.overallEarnings!==null&&s.overallEarnings!==undefined).length} reported overall outcomes · ${count.operatingProgramsWithEarnings} program outcomes`;
     $('release-note').textContent=`Official data release: ${state.data.metadata.release} · Retrieved: ${state.data.metadata.retrievedAt.slice(0,10)}. Earnings are in 2024 dollars. Reference tuition is reported for 2025–26; net price is reported for 2024–25.`;
     $('calculator').setAttribute('aria-busy','false');
   }catch(error){

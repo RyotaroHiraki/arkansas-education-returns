@@ -16,6 +16,7 @@ dictionary cohort maps; replacing a filename date alone is insufficient.
 - [Official download page](https://collegescorecard.ed.gov/data/).
 - [Official glossary](https://collegescorecard.ed.gov/data/glossary/).
 - [Official data dictionary](https://collegescorecard.ed.gov/files/CollegeScorecardDataDictionary.xlsx).
+- [Institution methods](https://collegescorecard.ed.gov/files/InstitutionDataDocumentation.pdf), October 2026, pp. 30–34.
 - [Field-of-study methods](https://collegescorecard.ed.gov/files/FieldOfStudyDataDocumentation.pdf).
 - [Graduate earnings errata](https://collegescorecard.ed.gov/files/GraduateStudentsEarningsErrata.pdf).
 
@@ -26,6 +27,33 @@ in **2024 dollars**. `EARN_COUNT_WNE_4YR` is the corresponding reported count;
 it is not the number of all students who entered a program. Both earnings and
 counts are subject to the source's privacy procedures. `EARN_MDN_4YR_NAT` is
 the national field-and-credential comparison.
+
+The **Overall — all fields** view uses the institution file's
+`MD_EARN_WNE_4YR`, stored as `overallEarnings`. It is the official median
+for federally aided **undergraduate completers**, across fields and
+undergraduate credential levels, who are working and not enrolled four years
+after completion. It is neither an average of program medians nor a
+credential-specific result. `COUNT_WNE_4YR` supplies `overallEarningsCount`.
+Both have explicit reported/suppressed/unavailable status fields. The current
+dictionary's `Most_Recent_Inst_Cohort_Map` confirms the same 2017–18 and 2018–19
+completion cohorts, 2022 and 2023 earnings observations, and **2024 dollars**.
+The institutional technical documentation confirms the undergraduate scope;
+the current glossary confirms the four-year measurement horizon. These
+outcomes exclude noncompleters, nonworkers and people still enrolled.
+
+The separate `MD_EARN_WNE_P10` measure follows **entrants**, including
+noncompleters, ten years after entry; it is not used for Overall and is not a
+fallback for missing four-year values. Likewise, the
+[FAFSA lower-earnings indicator](https://fsapartners.ed.gov/knowledge-center/library/electronic-announcements/2025-12-03/new-lower-earnings-indicator-fafsar-form)
+adjusts earnings to January 2026 dollars in its March 2026 update. This site
+uses the unchanged **Scorecard 2024-dollar values**, not those separately
+inflation-adjusted FAFSA values.
+
+`PREDDEG`, stored as `predominantCredential`, describes the institution's
+predominant undergraduate award in 2024–25: 0 is unclassified, 1 certificate,
+2 associate, 3 bachelor, and 4 exclusively graduate. It does not restrict
+the Overall earnings population. Any default study duration based on it is
+an editable scenario assumption, not a measured time to completion.
 
 `EARN_THR_STATE` and `EARN_THR_NAT` are the state and national median earnings
 of high-school/GED graduates aged 25–34 with earnings and not enrolled. The
@@ -60,6 +88,13 @@ UI campus filtering must include that array. `earningsGroupInstitutionIds` and
 An earnings count must never be added across repeated branches or across
 credentials as though it counted distinct people.
 
+Overall earnings likewise come from the official OPEID6 group, potentially
+covering multiple branches and states. The institution rows retain the source
+values and use the existing `opeidInstitutionIds` and `opeidStates` to expose
+that scope. Do not add Overall counts across branch rows or use program
+counts to reconstruct this official median. The Overall institution selector
+can include operating institutions even if they have no program-level rows.
+
 Identifiers remain strings, preserving leading zeros. Credential codes are
 integers 1–8 using official labels. `PS`/`PrivacySuppressed` become JSON `null`
 with a `suppressed` status; `NA`, `NULL`, and blanks become `null` with an
@@ -72,6 +107,10 @@ fallback to other earnings horizons, or invented data.
 |---|---:|
 | Arkansas institutions | 84 |
 | Operating Arkansas institutions | 81 |
+| Institutions with reported Overall earnings | 74 |
+| Operating institutions with reported Overall earnings | 71 |
+| Overall earnings suppressed | 8 |
+| Overall earnings unavailable | 2 |
 | Raw campus-program rows | 2,757 |
 | Unique program earnings groups | 2,756 |
 | Groups with reported 4-year earnings | 600 |
